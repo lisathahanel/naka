@@ -44,9 +44,6 @@ button,input{font:inherit}
 /* AD LABEL (policy: ads distinguishable from content) */
 .ad-label{display:block;text-align:center;font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:var(--muted);margin:0 0 4px;font-weight:700}
 
-/* TOP LEADERBOARD */
-.m2a-leaderboard{width:100%;max-width:1100px;margin:0 auto 6px;padding:6px 0;min-height:96px;text-align:center;overflow:hidden}
-
 /* STICKY CONTROLS */
 .m2a-sticky-controls{position:sticky;top:0;z-index:1000;padding:10px 0;background:rgba(243,241,232,.97);border-bottom:1px solid var(--line)}
 .m2a-search-wrap{width:100%;max-width:760px;margin:0 auto 10px}
@@ -96,9 +93,6 @@ button,input{font:inherit}
 .m2a-vj{color:#d8d5c8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m2a-year{color:var(--gold2);font-size:10px;font-weight:800}
 
-/* AD CARD (clearly separated from content) */
-.m2a-ad-card{min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px;background:#fffdf8;border:2px dashed rgba(28,28,24,.22);border-radius:14px;overflow:hidden}
-
 /* LOADING / EMPTY */
 .m2a-loading{min-height:180px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);font-size:13px;font-weight:700;grid-column:1/-1}
 .m2a-spinner{width:34px;height:34px;border:3px solid rgba(28,28,24,.12);border-top-color:var(--gold);border-radius:50%;animation:m2aspin .75s linear infinite}
@@ -119,7 +113,7 @@ button,input{font:inherit}
 .m2a-post-title{margin:18px auto 7px;max-width:900px;padding:0 14px;color:#111;text-align:center;font-family:Georgia,serif;font-size:clamp(25px,5vw,40px);line-height:1.2;font-weight:700}
 .m2a-post-meta{text-align:center;color:#74736b;font-size:12px;padding:0 14px 15px}
 
-/* POST ADS */
+/* POST ADS — exactly 2 fresh placements per opened post */
 .m2a-post-ad{width:100%;max-width:900px;min-height:120px;margin:14px auto 22px;padding:0 12px;text-align:center;overflow:hidden}
 .m2a-mid-ad{min-height:280px}
 
@@ -186,8 +180,8 @@ body.m2a-anchor-visible{padding-bottom:66px}
 
 /* Post-reading mode */
 body.m2a-viewing-post .m2a-top{display:none}
-body.m2a-viewing-post .m2a-leaderboard{display:none}
 </style>
+<base target="_blank">
 <base target="_blank">
 </head>
 <body>
@@ -199,16 +193,6 @@ body.m2a-viewing-post .m2a-leaderboard{display:none}
       <h1>Naka Firimu And Series</h1>
       <p>Watch, discover and explore movies and series</p>
     </div>
-  </div>
-
-  <!-- TOP LEADERBOARD AD -->
-  <div class="m2a-leaderboard">
-    <span class="ad-label">Advertisement</span>
-    <ins class="adsbygoogle" style="display:block;min-height:90px;"
-         data-ad-client="ca-pub-2269884583846743"
-         data-ad-slot="5901052106"
-         data-ad-format="horizontal"
-         data-full-width-responsive="true"></ins>
   </div>
 
   <div class="m2a-sticky-controls">
@@ -272,7 +256,6 @@ var CONFIG={
   ],
   pageSize:50,
   maxPages:4,
-  adEvery:12,
   timeout:7000
 };
 
@@ -291,7 +274,8 @@ var state={
 var renderedIds=new Set();
 var renderedCount=0;
 
-/* post cache — avoid re-fetching the same post */
+/* post cache — stores ONLY the raw article entry (no ad markup).
+   The 2 ad containers are generated fresh by renderPostContent(). */
 var postCache=new Map();
 
 var catalog=document.getElementById("m2a-catalog");
@@ -465,7 +449,7 @@ function loadBackgroundPages(){
 
     if(state.items.length>before){
       /* If user is filtering/searching, a full rebuild is simpler & safe.
-         Otherwise append only the new cards (no ad re-request, no jank). */
+         Otherwise append only the new cards (no jank). Feed stays ad-free. */
       if(state.filter==="all"&&!state.query.trim()){
         renderCatalog(false);
       }else{
@@ -508,7 +492,7 @@ function toggleSave(id){
   try{localStorage.setItem("m2a_saved_movies",JSON.stringify(saved));}catch(e){}
 }
 
-/* ================= CARD BUILDER ================= */
+/* ================= CARD BUILDER (content only — feed is 100% ad-free) ================= */
 function buildCard(item){
   var saved=isSaved(item.id);
   var title=escapeHtml(item.title);
@@ -535,21 +519,10 @@ function buildCard(item){
   '</article>';
 }
 
-function buildAdCard(){
-  return '<div class="m2a-ad-card">'+
-    '<span class="ad-label">Advertisement</span>'+
-    '<ins class="adsbygoogle" style="display:block;width:100%;"'+
-      ' data-ad-client="ca-pub-2269884583846743"'+
-      ' data-ad-slot="2906167922"'+
-      ' data-ad-format="auto"'+
-      ' data-full-width-responsive="true"></ins>'+
-  '</div>';
-}
-
-/* ================= RENDER =================
+/* ================= RENDER (FEED = 0 ADS) =================
    full=true  : rebuild the whole catalog (filter/search/first load)
    full=false : append ONLY new items (background feed pages) — fast,
-                no ad re-requests, no scroll jump, no layout thrash.   */
+                no scroll jump, no layout thrash.                  */
 function renderCatalog(full){
   var filtered=getFilteredItems();
   countBox.textContent=filtered.length+" titles";
@@ -572,10 +545,7 @@ function renderCatalog(full){
   filtered.forEach(function(item){
     if(renderedIds.has(item.id))return;
 
-    if(renderedCount>0&&renderedCount%CONFIG.adEvery===0){
-      frag.appendChild(htmlToNode(buildAdCard()));
-    }
-
+    /* FEED IS AD-FREE: cards only, zero ad insertion. */
     frag.appendChild(htmlToNode(buildCard(item)));
     renderedIds.add(item.id);
     renderedCount++;
@@ -590,7 +560,6 @@ function renderCatalog(full){
     bindSaveDelegation();
   }
 
-  lazyAds();
   syncPostFromHash();
 }
 
@@ -632,7 +601,8 @@ function bindSaveDelegation(){/* handled above via delegation */}
 
 /* ================= ADSENSE VIEWABILITY LOADER =================
    Ads push only when near viewport -> higher viewability -> higher CPM.
-   Elements are never re-created on append, so no duplicate requests.   */
+   Every <ins> is created FRESH per opened post, so each post gets its
+   own ad elements; the observer activates each one exactly once.    */
 var adObserver=("IntersectionObserver" in window)
   ? new IntersectionObserver(function(entries){
       entries.forEach(function(entry){
@@ -683,7 +653,7 @@ function openPost(item){
 function closePost(scrollBack){
   state.viewing=null;
   postView.classList.remove("show");
-  postView.innerHTML="";
+  postView.innerHTML="";   /* drops this post's ad elements entirely */
   document.body.classList.remove("m2a-viewing-post");
 
   if(window.location.hash){
@@ -697,7 +667,7 @@ function closePost(scrollBack){
   }
 }
 
-/* ================= FETCH POST (cached) ================= */
+/* ================= FETCH POST (cached — cache holds ONLY article content) ================= */
 function fetchPost(item){
   if(!item||!item.id)return;
 
@@ -705,7 +675,7 @@ function fetchPost(item){
   var cached=postCache.get(cacheKey);
 
   if(cached){
-    renderPostContent(cached,item);
+    renderPostContent(cached,item);   /* ads still generated fresh below */
     return;
   }
 
@@ -715,7 +685,7 @@ function fetchPost(item){
   jsonp(url).then(function(data){
     var entry=data&&data.entry?data.entry:null;
     if(!entry)throw new Error("Post not found");
-    postCache.set(cacheKey,entry);
+    postCache.set(cacheKey,entry);    /* raw entry only — no ad markup cached */
     renderPostContent(entry,item);
   }).catch(function(){
     postView.innerHTML='<div class="m2a-error"><strong>Unable to load this post.</strong><br><br>Please try again.</div>';
@@ -728,33 +698,6 @@ function getRawPostHtml(entry){
   return "";
 }
 
-/* ================= MID-ARTICLE ADS (max 3, separated blocks) ================= */
-function insertMidPostAds(){
-  var body=postView.querySelector(".m2a-post-body");
-  if(!body)return;
-
-  var nodes=Array.prototype.slice.call(body.children);
-  if(nodes.length<8)return;   /* short posts: skip mid ads (density-safe) */
-
-  var step=6,maxAds=3,inserted=0;
-
-  for(var i=step-1;i<nodes.length-1&&inserted<maxAds;i+=step){
-    var node=nodes[i];
-    var adBox=document.createElement("div");
-    adBox.className="m2a-post-ad m2a-mid-ad";
-    adBox.innerHTML='<span class="ad-label">Advertisement</span>'+
-      '<ins class="adsbygoogle" style="display:block;text-align:center;"'+
-      ' data-ad-client="ca-pub-2269884583846743"'+
-      ' data-ad-slot="2906167922"'+
-      ' data-ad-format="auto"'+
-      ' data-full-width-responsive="true"></ins>';
-    if(node.parentNode){
-      node.parentNode.insertBefore(adBox,node.nextSibling);
-      inserted++;
-    }
-  }
-}
-
 function formatDate(value){
   if(!value)return "";
   try{
@@ -762,7 +705,43 @@ function formatDate(value){
   }catch(e){return "";}
 }
 
-/* ================= RENDER FULL POST ================= */
+/* ================= FRESH AD BUILDER (new <ins> every call) ================= */
+function buildPostAd(){
+  var box=document.createElement("div");
+  box.className="m2a-post-ad";
+  box.innerHTML='<span class="ad-label">Advertisement</span>'+
+    '<ins class="adsbygoogle" style="display:block;text-align:center;"'+
+    ' data-ad-client="ca-pub-2269884583846743"'+
+    ' data-ad-slot="2906167922"'+
+    ' data-ad-format="auto"'+
+    ' data-full-width-responsive="true"></ins>';
+  return box;
+}
+
+/* ================= AD #2 — INSIDE CONTENT (long posts only) =================
+   Exactly one in-content placement, inserted after the 3rd paragraph,
+   only when the article is long enough to be ad-density safe.     */
+function insertPostContentAd(){
+  var body=postView.querySelector(".m2a-post-body");
+  if(!body)return;
+
+  var paras=body.querySelectorAll("p");
+  if(paras.length<6)return;   /* short posts: no in-content ad */
+
+  var adBox=buildPostAd();
+  adBox.classList.add("m2a-mid-ad");
+
+  var target=paras[2];        /* after the 3rd paragraph */
+  if(target&&target.parentNode){
+    target.parentNode.insertBefore(adBox,target.nextSibling);
+  }
+}
+
+/* ================= RENDER FULL POST (2 fresh ads per open) =================
+   Structure per opened post:
+     header/title  ->  FRESH AD #1  ->  content  ->  AD #2 (long posts)
+   renderPostContent() always rebuilds postView.innerHTML, so every
+   opened post — cached or not — receives brand-new <ins> elements.   */
 function renderPostContent(entry,item){
   var html=getRawPostHtml(entry);
   var title=(entry.title&&entry.title.$t)?entry.title.$t:item.title;
@@ -771,15 +750,6 @@ function renderPostContent(entry,item){
 
   var safeTitle=escapeHtml(title);
   var safeDate=escapeHtml(formatDate(published));
-
-  function adBlock(){
-    return '<div class="m2a-post-ad"><span class="ad-label">Advertisement</span>'+
-      '<ins class="adsbygoogle" style="display:block"'+
-      ' data-ad-client="ca-pub-2269884583846743"'+
-      ' data-ad-slot="2906167922"'+
-      ' data-ad-format="auto"'+
-      ' data-full-width-responsive="true"></ins></div>';
-  }
 
   postView.innerHTML=
     '<div class="m2a-post-toolbar">'+
@@ -791,12 +761,19 @@ function renderPostContent(entry,item){
       '<div class="m2a-post-meta">'+
         (item.kind==="series"?"Series":"Firimu")+(safeDate?" • "+safeDate:"")+
       '</div>'+
-    '</div>'+
-    adBlock()+
-    '<div class="m2a-post-body">'+html+'</div>'+
-    adBlock();
+    '</div>';
 
-  insertMidPostAds();
+  /* FRESH AD #1 — directly below the post header/title area */
+  postView.appendChild(buildPostAd());
+
+  /* Content — pure article markup from the raw entry (never cached with ads) */
+  var body=document.createElement("div");
+  body.className="m2a-post-body";
+  body.innerHTML=html;
+  postView.appendChild(body);
+
+  /* FRESH AD #2 — inside the content, only for sufficiently long posts */
+  insertPostContentAd();
 
   var back=postView.querySelector(".m2a-back-btn");
   if(back){back.onclick=function(){closePost(true);};}
@@ -805,6 +782,7 @@ function renderPostContent(entry,item){
     document.dispatchEvent(new CustomEvent("m2a:postloaded",{detail:{item:item,entry:entry}}));
   }catch(e){}
 
+  /* Lazy-load both fresh ads through the existing IntersectionObserver */
   lazyAds();
 
   setTimeout(function(){
